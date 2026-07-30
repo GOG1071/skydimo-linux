@@ -1,0 +1,24 @@
+[Unit]
+Description=Skydimo LED engine (ambilight / music, per config)
+Documentation=file://@PREFIX@/README.md
+# Screen capture goes through xdg-desktop-portal, so the desktop must be up.
+After=graphical-session.target pipewire.service
+PartOf=graphical-session.target
+# The engine restarts itself in-process on config changes, so a tight
+# systemd restart loop would mean something is genuinely wrong.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Match the launcher: use the venv's own dependencies, not ~/.local/lib.
+Environment=PYTHONNOUSERSITE=1
+ExecStart=@BINDIR@/@APP@ run
+ExecStopPost=-@BINDIR@/@APP@ off
+Restart=on-failure
+RestartSec=5
+# Shutdown blanks the strip and closes the port; ~3s is normal.
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical-session.target

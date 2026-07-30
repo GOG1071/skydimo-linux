@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Skydimo
+GenericName=LED Strip Control
+Comment=Configure the Skydimo ambilight and music-reactive LED strip
+Exec=@BINDIR@/@APP@ gui
+Icon=preferences-desktop-display
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=led;ambilight;rgb;skydimo;strip;
+StartupNotify=true

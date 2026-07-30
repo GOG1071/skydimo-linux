@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skydimo"
+version = "1.1.0"
+description = "Linux driver, ambilight and music-reactive engine for the Skydimo 'Rainbow Music LED' USB adapter"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "TungLV-GOG1071" }]
+keywords = ["led", "ambilight", "skydimo", "hyperion", "ws2812", "rgb"]
+classifiers = [
+  "Environment :: X11 Applications :: GTK",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Hardware",
+]
+# PyGObject and the GStreamer bindings are deliberately NOT listed: they must
+# come from system packages, which the venv borrows via system-site-packages.
+dependencies = [
+  "numpy>=1.20",
+  "pyserial>=3.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/GOG1071/skydimo-linux"
+Issues = "https://github.com/GOG1071/skydimo-linux/issues"
+
+[project.scripts]
+skydimo = "skydimo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
