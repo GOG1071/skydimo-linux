@@ -7,9 +7,12 @@ import time
 import numpy as np
 
 from . import config as cfgmod
-from .capture import ScreenCapture
 from .device import Skydimo
 from .render import Shaper
+
+# `capture` is imported inside run() rather than here: it pulls in GStreamer via
+# PyGObject, and the zone-sampling helpers below are pure numpy. Keeping the
+# import lazy means they can be used (and tested) without a desktop session.
 
 
 def zone_slices(zones, width: int, height: int):
@@ -59,6 +62,8 @@ def run(cfg: dict, stop_check=None) -> str | None:
             f"Config has {len(zones)} zones but {leds} LEDs. "
             "Run `skydimo calibrate` first."
         )
+
+    from .capture import ScreenCapture
 
     cap = ScreenCapture(
         width=int(cfg["capture_width"]),

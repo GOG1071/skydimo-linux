@@ -1,7 +1,8 @@
 """Tests for the parts that do not need hardware or a desktop session.
 
-Deliberately avoids importing `skydimo.capture` and `skydimo.gui`, so this runs
-in CI without GTK, GStreamer or a display.
+Runs in CI without GTK, GStreamer, a display or the adapter. `skydimo.gui` is
+never imported, and `skydimo.ambilight` imports `skydimo.capture` lazily inside
+`run()` so its sampling helpers stay usable here.
 """
 
 import unittest
