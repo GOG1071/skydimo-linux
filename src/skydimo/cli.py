@@ -77,25 +77,42 @@ class _PortHandover:
 
 
 def cmd_info(args, cfg):
-    from .device import find_port, Skydimo
-    port = find_port() if cfg["port"] == "auto" else cfg["port"]
-    print(f"port        {port}")
-    dev = Skydimo(port=port, leds=int(cfg["led_count"]),
-                  color_order=cfg["color_order"], white_cal=cfg.get("white_cal"))
+    from . import service
+    from .device import BAUD, find_port, Skydimo
+
     try:
-        print(f"device id   {dev.device_id.decode(errors='replace')}")
-        print(f"baud        1000000")
-        print(f"led count   {cfg['led_count']}")
-        print(f"colour ord  {cfg['color_order']}")
-        print(f"zones       {len(cfg.get('zones') or [])}")
-        lay = cfg.get("layout")
-        print(f"layout      {lay['description'] if lay else 'not calibrated'}")
-        print(f"mode        {cfg.get('mode', 'ambilight')}")
-        print(f"config      {cfgmod.CONFIG_PATH}")
-        from . import service
-        print(f"service     {service.status_line()}")
-    finally:
-        dev.close(blank=False)
+        port = find_port() if cfg["port"] == "auto" else cfg["port"]
+    except FileNotFoundError as exc:
+        port = "not found"
+        print(f"port        {port}  ({exc})")
+    else:
+        print(f"port        {port}")
+
+    # Reading the device id needs the port, which the engine may be holding.
+    # That is not a reason to withhold everything else.
+    dev_id = "-"
+    if port != "not found":
+        try:
+            dev = Skydimo(port=port, leds=int(cfg["led_count"]),
+                          color_order=cfg["color_order"],
+                          white_cal=cfg.get("white_cal"), attempts=1)
+        except Exception as exc:
+            dev_id = ("in use by the engine"
+                      if "lock" in str(exc).lower() else f"unavailable ({exc})")
+        else:
+            dev_id = dev.device_id.decode(errors="replace")
+            dev.close(blank=False)
+
+    lay = cfg.get("layout")
+    print(f"device id   {dev_id}")
+    print(f"baud        {BAUD}")
+    print(f"led count   {cfg['led_count']}")
+    print(f"colour ord  {cfg['color_order']}")
+    print(f"zones       {len(cfg.get('zones') or [])}")
+    print(f"layout      {lay['description'] if lay else 'not calibrated'}")
+    print(f"mode        {cfg.get('mode', 'ambilight')}")
+    print(f"config      {cfgmod.CONFIG_PATH}")
+    print(f"service     {service.status_line()}")
 
 
 def cmd_test(args, cfg):
