@@ -155,7 +155,7 @@ telling ModemManager to leave the port alone is cleaner — `./install.sh --udev
 or by hand:
 
 ```bash
-sudo cp packaging/99-skydimo.rules /etc/udev/rules.d/
+sudo cp packaging/70-skydimo.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 

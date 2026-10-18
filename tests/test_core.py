@@ -314,5 +314,27 @@ class TestAmbilightSampling(unittest.TestCase):
         self.assertGreater(top.mean(), bottom.mean() + 10)
 
 
+class TestFindPort(unittest.TestCase):
+    def _find(self, exists=False, comports=(), globbed=()):
+        from unittest import mock
+        from skydimo import device
+        with mock.patch.object(device.os.path, "exists", return_value=exists), \
+             mock.patch.object(device.list_ports, "comports", return_value=list(comports)), \
+             mock.patch.object(device.glob, "glob",
+                               side_effect=lambda pat: [g for g in globbed if g.startswith(pat[:-1])]):
+            return device.find_port()
+
+    def test_prefers_udev_symlink(self):
+        self.assertEqual(self._find(exists=True, globbed=["/dev/ttyUSB0"]), "/dev/skydimo")
+
+    def test_never_falls_back_to_ttyacm(self):
+        # e.g. an LCD panel on ttyACM0 with no Skydimo adapter plugged in
+        with self.assertRaises(FileNotFoundError):
+            self._find(globbed=["/dev/ttyACM0"])
+
+    def test_falls_back_to_ttyusb(self):
+        self.assertEqual(self._find(globbed=["/dev/ttyACM0", "/dev/ttyUSB1"]), "/dev/ttyUSB1")
+
+
 if __name__ == "__main__":
     unittest.main()
