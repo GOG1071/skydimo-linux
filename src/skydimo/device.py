@@ -37,6 +37,7 @@ Frame (Adalight/AWA lineage, vendor magic):
 from __future__ import annotations
 
 import glob
+import os
 import time
 
 import serial
@@ -45,6 +46,7 @@ from serial.tools import list_ports
 BAUD = 1_000_000
 VID_CH340 = 0x1A86
 PID_CH340 = 0x7523
+UDEV_SYMLINK = "/dev/skydimo"  # created by packaging/70-skydimo.rules
 
 HDR_MAGIC0 = 0x54  # 'T'
 HDR_MAGIC1 = 0x6E  # 'n'
@@ -68,14 +70,18 @@ class HandshakeError(RuntimeError):
 
 def find_port() -> str:
     """Locate the adapter's serial port (CH340 bridge)."""
+    # The udev rule names the adapter, so this never has to guess.
+    if os.path.exists(UDEV_SYMLINK):
+        return UDEV_SYMLINK
     for p in list_ports.comports():
         if p.vid == VID_CH340 and p.pid == PID_CH340:
             return p.device
-    # Fall back to any USB serial node; the handshake will confirm identity.
-    for pattern in ("/dev/ttyUSB*", "/dev/ttyACM*"):
-        found = sorted(glob.glob(pattern))
-        if found:
-            return found[0]
+    # Fall back to USB serial bridges only. The CH340 never enumerates as
+    # ttyACM, and ttyACM nodes are other people's CDC devices (LCD panels,
+    # microcontrollers): the DTR reset and 1 Mbaud handshake would disrupt them.
+    found = sorted(glob.glob("/dev/ttyUSB*"))
+    if found:
+        return found[0]
     raise FileNotFoundError(
         "No USB serial adapter found. Is the Skydimo adapter plugged in?"
     )

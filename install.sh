@@ -88,7 +88,7 @@ do_uninstall() {
     ok "removed program files, service and launcher"
     say ""
     say "Your settings were left at $CONFDIR/config.json"
-    say "The udev rule, if you installed it, is at /etc/udev/rules.d/99-skydimo.rules"
+    say "The udev rule, if you installed it, is at /etc/udev/rules.d/70-skydimo.rules"
     exit 0
 }
 
@@ -334,13 +334,17 @@ command -v update-desktop-database >/dev/null 2>&1 && \
     update-desktop-database "$DESKTOPDIR" 2>/dev/null || true
 ok "desktop entry: $DESKTOPDIR/$APP_NAME.desktop"
 
-cp "$SRC_DIR/packaging/99-skydimo.rules" "$PREFIX/"
+cp "$SRC_DIR/packaging/70-skydimo.rules" "$PREFIX/"
+rm -f "$PREFIX/99-skydimo.rules"
 cp "$SRC_DIR/README.md" "$PREFIX/" 2>/dev/null || true
 
 if [ "$DO_UDEV" = 1 ]; then
     step "Installing the udev rule"
-    if sudo install -m 0644 "$SRC_DIR/packaging/99-skydimo.rules" \
-            /etc/udev/rules.d/99-skydimo.rules; then
+    # Older versions installed it as 99-, which sorts after 73-seat-late.rules
+    # and so never got the uaccess ACL.
+    if sudo install -m 0644 "$SRC_DIR/packaging/70-skydimo.rules" \
+            /etc/udev/rules.d/70-skydimo.rules; then
+        sudo rm -f /etc/udev/rules.d/99-skydimo.rules
         sudo udevadm control --reload-rules && sudo udevadm trigger || true
         ok "ModemManager will leave the adapter alone"
     else

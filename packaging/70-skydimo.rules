@@ -1,0 +1,14 @@
+# Keep ModemManager away from the Skydimo adapter's CH340 bridge, hand it to the
+# logged-in user, and name it /dev/skydimo so the driver never has to guess
+# which serial port is the strip. Without the ModemManager part, it probes the
+# port with AT commands for a few seconds after plug-in, which can collide with
+# the driver's handshake.
+#
+# The 70- prefix matters: TAG+="uaccess" is acted on by 73-seat-late.rules, so a
+# rule sorted after it (99-...) sets the tag too late and the user gets no ACL.
+# Install with:
+#   sudo cp ~/.local/share/skydimo/70-skydimo.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", \
+  ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1", TAG+="uaccess", \
+  SYMLINK+="skydimo"
