@@ -32,16 +32,32 @@ Frame (Adalight/AWA lineage, vendor magic):
                   f2  = (f2 + f1) % 255
                   ext = (ext + (b ^ i)) % 255      i = byte index, & 0xFF
                   f3  = ext, or 0xAA when ext == 0x41
+
+Network transport (WLED over Wi-Fi)
+-----------------------------------
+The Wi-Fi variant of the adapter runs WLED. When `port` is a host or IP instead
+of a /dev path ("192.168.1.38") frames go to WLED's WebSocket (`/ws`) as JSON
+per-LED colours, and none of the serial handshake applies:
+
+    {"tt": 0, "v": false, "seg": [{"id": 0, "i": [start, "RRGGBB", ...]}]}
+
+The stock realtime UDP ports (DRGB/DDP/E1.31/Art-Net) are closed on this
+firmware, so UDP is not an option. WLED owns the colour order, so `color_order`
+is ignored. The strip keeps its last picture until told otherwise, so the
+effect running before we connected is restored on close.
 """
 
 from __future__ import annotations
 
 import glob
+import json
 import os
 import time
+import urllib.request
 
 import serial
 from serial.tools import list_ports
+from websockets.sync.client import connect as ws_connect
 
 BAUD = 1_000_000
 VID_CH340 = 0x1A86
@@ -52,6 +68,8 @@ HDR_MAGIC0 = 0x54  # 'T'
 HDR_MAGIC1 = 0x6E  # 'n'
 HDR_PLAIN = 0x68  # 'h'  -- no white-channel calibration
 HDR_WHITE = 0x54  # 'T'  -- white-channel calibration appended
+
+WS_CHUNK = 192  # LEDs per message; keeps each JSON small for the ESP8266's heap
 HEADER_SIZE = 6
 
 COLOR_ORDERS = {
@@ -66,6 +84,28 @@ COLOR_ORDERS = {
 
 class HandshakeError(RuntimeError):
     """The adapter did not complete the r/m handshake."""
+
+
+def is_network(port: str) -> bool:
+    """True when `port` names a host rather than a serial device path."""
+    return not port.startswith("/")
+
+
+def target_host(port: str) -> str:
+    """Strip an optional scheme from "[ws://|http://|wled://]host[:port]"."""
+    return port.split("://", 1)[-1].rstrip("/")
+
+
+def wled_json(host: str, path: str, body: dict | None = None, timeout: float = 3.0):
+    """GET (or POST `body` to) a WLED JSON endpoint. Raises OSError if unreachable."""
+    req = urllib.request.Request(f"http://{host}/json/{path}")
+    if body is not None:
+        req = urllib.request.Request(
+            req.full_url, json.dumps(body).encode(),
+            {"Content-Type": "application/json"},
+        )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
 
 
 def find_port() -> str:
@@ -112,6 +152,10 @@ class Skydimo:
         self.attempts = attempts
         self.device_id: bytes = b""
         self.s: serial.Serial | None = None
+        self._ws = None
+        self._host = ""
+        self.net_info: dict = {}
+        self._net_state: dict = {}
         self._header = self._build_header()
         if open_now:
             self.open()
@@ -120,6 +164,8 @@ class Skydimo:
 
     def open(self) -> None:
         """Open the port, reset the MCU, and complete the handshake."""
+        if is_network(self.port):
+            return self._open_network()
         last = None
         for attempt in range(1, self.attempts + 1):
             try:
@@ -164,6 +210,32 @@ class Skydimo:
                 f'adapter did not acknowledge data mode; "m" returned {ack!r}'
             )
 
+    def _open_network(self) -> None:
+        self._host = target_host(self.port)
+        try:
+            self.net_info = wled_json(self._host, "info")
+            self._net_state = wled_json(self._host, "state")
+            self._ws = ws_connect(
+                f"ws://{self._host}/ws", open_timeout=5, max_size=None,
+            )
+        except (OSError, ValueError, TimeoutError) as exc:
+            raise HandshakeError(f"Could not reach WLED at {self._host}: {exc}") from exc
+        self.device_id = (
+            f"WLED {self.net_info.get('ver', '?')} "
+            f"{self.net_info.get('name', '')}".strip().encode()
+        )
+
+    def _restore_network(self) -> None:
+        """Put back the effect that was running before we took over."""
+        seg = (self._net_state.get("seg") or [{}])[0]
+        keys = ("fx", "sx", "ix", "pal", "col")
+        if not all(k in seg for k in keys):
+            return
+        wled_json(self._host, "state", {
+            "seg": [{"id": seg.get("id", 0), **{k: seg[k] for k in keys}}],
+            "transition": self._net_state.get("transition", 7),
+        })
+
     def _command(self, cmd: bytes) -> bytes:
         assert self.s is not None
         self.s.write(cmd)
@@ -174,6 +246,12 @@ class Skydimo:
         return reply
 
     def _quiet_close(self) -> None:
+        if self._ws is not None:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
         if self.s is not None:
             try:
                 self.s.close()
@@ -182,7 +260,13 @@ class Skydimo:
             self.s = None
 
     def close(self, blank: bool = True) -> None:
-        if self.s is not None and blank:
+        if self._ws is not None:
+            if blank:
+                try:
+                    self._restore_network()
+                except Exception:
+                    pass
+        elif self.s is not None and blank:
             try:
                 self.fill(0, 0, 0)
                 time.sleep(0.05)
@@ -225,6 +309,8 @@ class Skydimo:
             raise ValueError(
                 f"expected {self.leds * 3} bytes ({self.leds} LEDs), got {len(rgb)}"
             )
+        if self._ws is not None:
+            return self._send_ws(rgb)
         if self.s is None:
             raise RuntimeError("device is not open")
         body = bytearray(rgb)
@@ -234,9 +320,21 @@ class Skydimo:
         self.s.write(self._header + bytes(body))
         self.s.flush()
 
+    def _send_ws(self, rgb: bytes | bytearray) -> None:
+        assert self._ws is not None
+        hexes = [rgb[i:i + 3].hex() for i in range(0, len(rgb), 3)]
+        for start in range(0, len(hexes), WS_CHUNK):
+            self._ws.send(json.dumps(
+                {"tt": 0, "v": False,
+                 "seg": [{"id": 0, "i": [start, *hexes[start:start + WS_CHUNK]]}]},
+                separators=(",", ":"),
+            ))
+
     def write(self, pixels) -> None:
         """Send one frame from an iterable of (r, g, b) triples."""
-        i0, i1, i2 = COLOR_ORDERS[self.color_order]
+        # WLED applies its own colour order, so send plain RGB to it.
+        order = "rgb" if self._ws is not None else self.color_order
+        i0, i1, i2 = COLOR_ORDERS[order]
         body = bytearray()
         for px in pixels:
             body += bytes((px[i0] & 0xFF, px[i1] & 0xFF, px[i2] & 0xFF))

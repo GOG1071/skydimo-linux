@@ -180,6 +180,21 @@ toggle DTR on open; pyserial and Hyperion do not.
 ~/.local/share/applications/skydimo.desktop
 ```
 
+## Wi-Fi (WLED) adapters
+
+The Wi-Fi variant runs WLED. Point `port` at its address and frames go to its
+WebSocket as per-LED colours (about 18 fps on an ESP8266), with no serial
+handshake:
+
+```
+skydimo set port=192.168.1.38 led_count=144   # count: http://<ip>/json/info
+```
+
+The realtime UDP ports (DRGB, DDP, E1.31, Art-Net) are closed on the vendor
+firmware, which is why WebSocket is used. `color_order` is ignored (WLED has its
+own setting). When the engine stops, the effect that was running before it
+connected is restored.
+
 ## Troubleshooting
 
 **No adapter found** — check `lsusb` for `1a86:7523`. Pin it explicitly with

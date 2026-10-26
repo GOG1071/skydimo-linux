@@ -355,23 +355,23 @@ fi
 # ---------------------------------------------------------------- verify ----
 
 step "Verifying"
-if PYTHONNOUSERSITE=1 "$VENV/bin/python" -c 'import skydimo, numpy, serial' 2>/dev/null; then
+if PYTHONNOUSERSITE=1 "$VENV/bin/python" -c 'import skydimo, numpy, serial, websockets' 2>/dev/null; then
     ok "package imports cleanly"
 else
     die "the installed package does not import -- see the output above"
 fi
 
 if ! PYTHONNOUSERSITE=1 "$VENV/bin/python" - >/dev/null 2>&1 <<'EOF'
-import pathlib, sys, numpy, serial
+import pathlib, sys, numpy, serial, websockets
 venv = pathlib.Path(sys.prefix).resolve()
-for m in (numpy, serial):
+for m in (numpy, serial, websockets):
     if venv not in pathlib.Path(m.__file__).resolve().parents:
         raise SystemExit(1)
 EOF
 then
-    warn "numpy/pyserial are not inside the venv; reinstalling them there"
+    warn "numpy/pyserial/websockets are not inside the venv; reinstalling them there"
     "$VENV/bin/python" -m pip install --quiet --upgrade --force-reinstall \
-        --no-deps numpy pyserial || die "could not install numpy/pyserial"
+        --no-deps numpy pyserial websockets || die "could not install numpy/pyserial/websockets"
     ok "dependencies reinstalled inside the venv"
 else
     ok "dependencies live inside the venv"
