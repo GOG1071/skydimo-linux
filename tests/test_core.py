@@ -5,6 +5,7 @@ never imported, and `skydimo.ambilight` imports `skydimo.capture` lazily inside
 `run()` so its sampling helpers stay usable here.
 """
 
+import json
 import unittest
 
 import numpy as np
@@ -21,8 +22,48 @@ def bare_device(leds, color_order="rgb", white_cal=None):
     d.color_order = color_order
     d.white_cal = tuple(white_cal) if white_cal else None
     d.s = None
+    d._ws = None
     d._header = d._build_header()
     return d
+
+
+class TestNetworkTransport(unittest.TestCase):
+    def _sent(self, leds, pixel=(1, 2, 3)):
+        sent = []
+
+        class WS:
+            def send(self, msg):
+                sent.append(json.loads(msg))
+
+        d = bare_device(leds, color_order="bgr")
+        d._ws = WS()
+        d.write([pixel] * leds)
+        return sent
+
+    def test_target_host(self):
+        from skydimo.device import is_network, target_host
+        self.assertEqual(target_host("192.168.1.38"), "192.168.1.38")
+        self.assertEqual(target_host("ws://192.168.1.38:80/"), "192.168.1.38:80")
+        self.assertTrue(is_network("192.168.1.38"))
+        self.assertFalse(is_network("/dev/ttyUSB0"))
+
+    def test_single_message_for_small_strip(self):
+        (msg,) = self._sent(144)
+        seg = msg["seg"][0]
+        self.assertEqual(seg["i"][0], 0)
+        self.assertEqual(seg["i"][1:], ["010203"] * 144)
+        self.assertFalse(msg["v"])
+
+    def test_color_order_is_ignored(self):
+        # WLED owns the colour order; a "bgr" config must not swap channels
+        (msg,) = self._sent(2, pixel=(255, 0, 0))
+        self.assertEqual(msg["seg"][0]["i"][1:], ["ff0000"] * 2)
+
+    def test_large_strip_is_chunked_with_start_offsets(self):
+        sent = self._sent(400)
+        starts = [m["seg"][0]["i"][0] for m in sent]
+        self.assertEqual(starts, [0, 192, 384])
+        self.assertEqual(sum(len(m["seg"][0]["i"]) - 1 for m in sent), 400)
 
 
 class TestFrameFormat(unittest.TestCase):

@@ -78,7 +78,7 @@ class _PortHandover:
 
 def cmd_info(args, cfg):
     from . import service
-    from .device import BAUD, find_port, Skydimo
+    from .device import BAUD, find_port, is_network, Skydimo
 
     try:
         port = find_port() if cfg["port"] == "auto" else cfg["port"]
@@ -105,7 +105,7 @@ def cmd_info(args, cfg):
 
     lay = cfg.get("layout")
     print(f"device id   {dev_id}")
-    print(f"baud        {BAUD}")
+    print(f"link        {'WebSocket (WLED)' if is_network(port) else f'{BAUD} baud serial'}")
     print(f"led count   {cfg['led_count']}")
     print(f"colour ord  {cfg['color_order']}")
     print(f"zones       {len(cfg.get('zones') or [])}")
